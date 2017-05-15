@@ -5,41 +5,49 @@
 //la premiere carte est ID 1, 2eme carte ID 2, etc.
 
 #if CARTE_ID == 1
-  #define MIDI_START_NOTE 60                    //Premiere note, puis les 9 suivantes seront incrémentées
-  #define CC_START_NUMBER  15                   //Premier controlChange   
-  #define NUM_STICKS 4                         //Nombre de strips par carte  
-  #define UPSIDE_DOWN 0                        //Pas inversé (partie basse)
+#define MIDI_START_NOTE 60                    //60 = C3 / Premiere note, puis les x suivantes seront incrémentées
+#define CC_START_NUMBER  15                   //Premier controlChange   
+#define NUM_STICKS 4                         //Nombre de strips par carte  
+#define UPSIDE_DOWN 0                        //Pas inversé (partie basse)
+
 #else if CARTE_ID == 2
-  #define MIDI_START_NOTE 72                  //1ere note de cette carte
-  #define CC_START_NUMBER 23                    //1er CC de cette carte
-  #define NUM_STICKS 6                         //Nombre de strips par carte
-  #define UPSIDE_DOWN 1                       //Inversé (partie haute)
+#define MIDI_START_NOTE 72                  //1ere note de cette carte (72 = C4)
+#define CC_START_NUMBER 23                    //1er CC de cette carte
+#define NUM_STICKS 6                         //Nombre de strips par carte
+#define UPSIDE_DOWN 1                       //Inversé (partie haute)
 #endif
 
 #define NUM_LEDS 30                            //Nombre de leds par strip
 #define NUM_ZONES 2                           //Nombre de zones sur chaque strip
-#define NUM_LEDS_PER_ZONE NUM_LEDS/NUM_ZONES  //auto calcul du nombre de leds par zone
 #define LED_TOLERANCE 2                       //Largeur de la zone bleue quand on appuie
 #define MIDI_CHANNEL 15                       //Channel midi sur lequel envoyer les notes
 #define CC_CHANNEL 16                         //Channel sur lequel envoyer les CC
-#define TOTAL_ZONES NUM_STICKS*NUM_ZONES      //Automatique, ne pas changer
-
-const int noiseFilter = 30; //min value for mass noise
-const float noiseSmooth = .3f; //0 = no smooth, 1 = too much smooth (never use 1)
-const float minChangeVal = .02f;
-
+#define RECEIVE_CHANNEL 14                    //Channel de reception des notes et CC
 
 CRGB baseColor(51, 45, 30);                   //Couleur de base (blanc chaud)
-CRGB overColor(10, 20, 255);                  //Couleur à la pression
-CRGB liveZoneColor(20,100, 0);                //Couleur quand midi note arrive
-CRGB liveCCColor(255,60,0);                  //Couleur quand CC arrive
+CRGB overColor(10, 20, 255);                  //Couleur à la pression (bleu)
+CRGB liveZoneColor(20, 100, 0);               //Couleur quand midi note arrive (vert)
+CRGB liveCCColor(255, 60, 0);                //Couleur quand CC arrive (orange) 
 
-CRGB leds[NUM_STICKS][NUM_LEDS];
 #if CARTE_ID == 1
 const int potPins[NUM_STICKS] = {A0, A1, A2, A3};
 #elif CARTE_ID == 2
 const int potPins[NUM_STICKS] = {A0, A1, A2, A3, A4, A5};
 #endif
+
+
+//Ne pas trop toucher, filtrage du bruit de masse
+const int noiseFilter = 30; //min value for mass noise default 30, values between 0-1024
+const float noiseSmooth = .3f; //0 = no smooth, 1 = too much smooth (never use 1)
+const float minChangeVal = .02f;
+
+
+//Ne pas toucher
+#define NUM_LEDS_PER_ZONE NUM_LEDS/NUM_ZONES  //auto calcul du nombre de leds par zone
+#define TOTAL_ZONES NUM_STICKS*NUM_ZONES      //Automatique, ne pas changer
+
+CRGB leds[NUM_STICKS][NUM_LEDS];
+
 
 float stickZoneValues[NUM_STICKS][NUM_ZONES];
 float liveCCValues[NUM_STICKS][NUM_ZONES];
@@ -89,9 +97,9 @@ void loop() {
 
     int val = analogRead(potPins[i]);
 
-    if(val < noiseFilter) val = 0;
-    val = map(val,noiseFilter,1024,0,1024);
-    
+    if (val < noiseFilter) val = 0;
+    val = map(val, noiseFilter, 1024, 0, 1024);
+
     //Simple 4 division to rectify linearity
     float t = 0;
     const int middle = 330;
@@ -102,13 +110,13 @@ void loop() {
     else t = map(val, middleEnd, 1024, 768, 1024);
     t /= 1024.;
 
-    #if UPSIDE_DOWN
-    if(t > 0) t = 1-t;
-    #endif
-    
+#if UPSIDE_DOWN
+    if (t > 0) t = 1 - t;
+#endif
+
     //Zones
     int zone = floor(t * NUM_ZONES);
-    
+
 
     for (int j = 0; j < NUM_ZONES; j++)
     {
@@ -123,11 +131,11 @@ void loop() {
       if (tZone != stickZoneValues[i][j])
       {
         bool forceSendChanged = false;
-        
+
         if (tZone == 0)
         {
           stickZoneValues[i][j] = tZone;
-          if(ccReleaseEnabled) forceSendChanged = true;
+          if (ccReleaseEnabled) forceSendChanged = true;
 
           Serial.print(i);
           Serial.print('.');
@@ -146,13 +154,13 @@ void loop() {
           sendNoteOn(MIDI_CHANNEL, midiNote, 127);
         }
 
-        int oldMidiVal = stickZoneValues[i][j]*127;
-        float tZoneSmoothed = stickZoneValues[i][j] + (tZone - stickZoneValues[i][j])*(1-noiseSmooth);
-        int midiValSmoothed = tZoneSmoothed*127;
-        
-        if(forceSendChanged ||
-        (midiValSmoothed != oldMidiVal && abs(tZoneSmoothed - stickZoneValues[i][j]) > minChangeVal)
-        )
+        int oldMidiVal = stickZoneValues[i][j] * 127;
+        float tZoneSmoothed = stickZoneValues[i][j] + (tZone - stickZoneValues[i][j]) * (1 - noiseSmooth);
+        int midiValSmoothed = tZoneSmoothed * 127;
+
+        if (forceSendChanged ||
+            (midiValSmoothed != oldMidiVal && abs(tZoneSmoothed - stickZoneValues[i][j]) > minChangeVal)
+           )
         {
           stickZoneValues[i][j] = tZoneSmoothed;
           Serial.print(i);
@@ -166,7 +174,7 @@ void loop() {
           Serial.println("");
           sendControlChange(CC_CHANNEL, ccNumber, midiValSmoothed);
         }
-        
+
       }
 
       //LEDS
@@ -175,27 +183,27 @@ void loop() {
       int targetLed = stickZoneValues[i][j] * NUM_LEDS_PER_ZONE;
       int targetLiveLed = liveCCValues[i][j] * NUM_LEDS_PER_ZONE;
 
-      #if UPSIDE_DOWN
-      startLed = NUM_LEDS_PER_ZONE - startLed -1;
-      targetLed = NUM_LEDS_PER_ZONE - targetLed -1;
-      targetLiveLed = NUM_LEDS_PER_ZONE - targetLiveLed -1;
-      #endif
-      
+#if UPSIDE_DOWN
+      startLed = NUM_LEDS_PER_ZONE - startLed - 1;
+      targetLed = NUM_LEDS_PER_ZONE - targetLed - 1;
+      targetLiveLed = NUM_LEDS_PER_ZONE - targetLiveLed - 1;
+#endif
+
       bool pressActive = tZone > 0 && tZone < 1;
       bool liveCCActive = liveCCValues[i][j] > 0 && liveCCValues[i][j] <= 1;
 
-      CRGB bgColor = liveZoneValues[i][j]?liveZoneColor:baseColor;
+      CRGB bgColor = liveZoneValues[i][j] ? liveZoneColor : baseColor;
       int ledTolerance = LED_TOLERANCE;
-      if(liveCCActive) ledTolerance = 1;
+      if (liveCCActive) ledTolerance = 1;
       for (int k = 0; k < NUM_LEDS_PER_ZONE; k++)
       {
-        
+
         bool isInTolerance = k >= targetLed - ledTolerance && k <= targetLed + ledTolerance;
         bool isInLiveTolerance = k >= targetLiveLed - ledTolerance && k <= targetLiveLed + ledTolerance;
 
-        if (liveCCActive && isInLiveTolerance) leds[i][startLed+k] = liveCCColor;
-        else if (pressActive & isInTolerance) leds[i][startLed+k] = overColor;
-        else leds[i][startLed+k] = bgColor;
+        if (liveCCActive && isInLiveTolerance) leds[i][startLed + k] = liveCCColor;
+        else if (pressActive & isInTolerance) leds[i][startLed + k] = overColor;
+        else leds[i][startLed + k] = bgColor;
       }
     }
   }
@@ -224,52 +232,56 @@ void sendControlChange(byte channel, byte control, byte value) {
 }
 
 void processNoteOn(byte channel, byte pitch, byte velocity) {
-  int stick = (pitch - MIDI_START_NOTE) / NUM_ZONES;
-  int zone = (pitch - MIDI_START_NOTE) - (stick * NUM_ZONES);
-  
-  liveZoneValues[stick][zone] = true;
-  
-  
+  if (channel == RECEIVE_CHANNEL - 1)
+  {
+    int stick = (pitch - MIDI_START_NOTE) / NUM_ZONES;
+    int zone = (pitch - MIDI_START_NOTE) - (stick * NUM_ZONES);
+    liveZoneValues[stick][zone] = true;
+  }
 }
 
 void processNoteOff(byte channel, byte pitch, byte velocity) {
-  int stick = (pitch - MIDI_START_NOTE) / NUM_ZONES;
-  int zone = (pitch - MIDI_START_NOTE) - (stick * NUM_ZONES);
-  liveZoneValues[stick][zone] = false;
+  if (channel == RECEIVE_CHANNEL - 1)
+  {
+    int stick = (pitch - MIDI_START_NOTE) / NUM_ZONES;
+    int zone = (pitch - MIDI_START_NOTE) - (stick * NUM_ZONES);
+    liveZoneValues[stick][zone] = false;
+  }
 }
 
+
 void processControlChange(byte channel, byte number, byte value) {
-   if(channel == 13) //13 (0-15) = 14 (1-16)
-   {
-    if(number == 127)
+  if (channel == RECEIVE_CHANNEL - 1) //13 (0-15) = 14 (1-16)
+  {
+    if (number == 127)
     {
-      if(value > 64) ccReleaseEnabled = true;
+      if (value > 64) ccReleaseEnabled = true;
       else ccReleaseEnabled = false;
 
       Serial.print("CC Release ");
-      Serial.println(ccReleaseEnabled?"enabled":"disabled");
-    }else
+      Serial.println(ccReleaseEnabled ? "enabled" : "disabled");
+    } else
     {
       int stick = (number - CC_START_NUMBER) / NUM_ZONES;
       int zone = (number - CC_START_NUMBER) - (stick * NUM_ZONES);
 
-       Serial.print("Process CC ");
-        Serial.print(stick);
-        Serial.print(" ");
-        Serial.print(zone);
-        Serial.print(" ");
-        
-      if(stick < NUM_STICKS && zone < NUM_ZONES)
+      Serial.print("Process CC ");
+      Serial.print(stick);
+      Serial.print(" ");
+      Serial.print(zone);
+      Serial.print(" ");
+
+      if (stick < NUM_STICKS && zone < NUM_ZONES)
       {
         liveCCValues[stick][zone] = value * 1. / 127.;
         Serial.println(liveZoneValues[stick][zone]);
-      }else
+      } else
       {
         Serial.println("OUT !");
       }
-      
+
     }
-   }
+  }
 }
 
 void processMIDI()
